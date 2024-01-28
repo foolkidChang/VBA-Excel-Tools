@@ -1,4 +1,3 @@
-' @Language = VBA
 Option Explicit
 
 Dim NoQA As Boolean 'for強化篩選所用
