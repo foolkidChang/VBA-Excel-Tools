@@ -2,38 +2,37 @@ Option Explicit
 
 Dim NoQA As Boolean 'for強化篩選所用
 
+'====Pre主要功能========================================================================================================================
+
 Sub 篩選強化_完全比對(): Call Real篩選強化_完全比對: End Sub
+Sub 使用說明_完全比對(): Call OpenLink("https://foolkidchang.wordpress.com/2019/09/30/ProFilter-ExactlyCompare/"): End Sub
+Sub 使用說明_模糊比對(): Call OpenLink("https://foolkidchang.wordpress.com/2019/10/03/ProFilter-FuzzyCompare/"): End Sub
+
+'====主要功能===========================================================================================================================
+
 Sub Real篩選強化_完全比對(Optional SemicolonCheck As Boolean = True)
 'SemicolonCheck: 分號檢查；為了區別在進階篩選時要不要詢問分號
     Call ExcelSettingsTurnOff(, , False)
     Call 篩選強化("完全比對", SemicolonCheck)
     Call ExcelSettingsTurnOn(False) ': End '為了清空記憶體(測試)；但會清空資料比對的記憶功能，故取消
 End Sub
+
 Sub 篩選強化_模糊比對()
     Call ExcelSettingsTurnOff(, , False)
     Call 篩選強化("模糊比對", True)
     Call ExcelSettingsTurnOn(False) ': End '為了清空記憶體(測試)；但會清空資料比對的記憶功能，故取消
 End Sub
-Sub 使用說明_完全比對()
-    Call OpenLink("https://foolkidchang.wordpress.com/2019/09/30/ProFilter-ExactlyCompare/")
-End Sub
 
-Sub 使用說明_模糊比對()
-    Call OpenLink("https://foolkidchang.wordpress.com/2019/10/03/ProFilter-FuzzyCompare/")
-End Sub
+'====呼叫功能===========================================================================================================================
 
 Sub 篩選強化(FilterType As String, Optional SemicolonCheck As Boolean = False) '使用進階篩選來實現多條件模糊比對
 
 Dim mySht As Worksheet, myAutoFilter As AutoFilter, myAutoFilterRng As Range, myRng As Range
 Dim LfField As Byte, RtField As Integer, myField As Byte, myFieldStr$
-
 Dim TempSht_1 As Worksheet, TempSht_2 As Worksheet, TempSht_3 As Worksheet, TempRng As Range, TempTxt$, Answer As Byte
-
-Dim myStr As String, myAry, MyAryRng As Range, TempTxtAry, SpcStrCnt As Long, AryCnt As Long
+Dim myStr As String, myAry, MyAryRng As Range, TempTxtAry, SpcStrCnt As Long, AryCnt As Long, StrLen As Byte, HasLongStr As Boolean
 Dim FormulaStr As String
-
 Dim SnR As Long, SnC As Integer, myRowCnt As Long
-
 Dim ChangeSplitStr As Boolean
 Const SplitStr$ = ";"     '找個很容易打的字串來當分隔符號，方便將一些常用字串拆分進行搜尋
 Const SplitStr_2$ = "@#@" '找個很難相同的字串來當分隔符號，避免太容易就把要查找的東西拆掉了
@@ -79,8 +78,11 @@ HasErr:     .Cells.NumberFormatLocal = "@" '強制改成文字格式
             
 NoErr:      .UsedRange.EntireColumn.AutoFit '避免因為數值過長而變成科學符號(還是有漏洞，但是算了，因為無法排除)
             
+            '移除重複，避免條件冗長
             On Error Resume Next
-            If .UsedRange.Columns.Count = 1 Then .UsedRange.RemoveDuplicates Columns:=1, Header:=xlNo '移除重複，避免條件冗長
+            For SnC = 1 To .UsedRange.Columns.Count
+                .UsedRange.Columns(SnC).RemoveDuplicates Columns:=1, Header:=xlNo
+            Next
             On Error GoTo 0
             
             '==數量確認== (避免操作錯誤導致當機)
@@ -100,7 +102,7 @@ NoErr:      .UsedRange.EntireColumn.AutoFit '避免因為數值過長而變成�
                         Answer = ProQA("因複製內容包含了分隔字串（" & SplitStr & "），" & Chr(10) & _
                                        "是否要將複製內容先分隔再篩選？", _
                                  Array("是，請將複製內容先分隔再篩選", _
-                                       "否，查詢內容包含分隔字串，請直接篩選"))
+                                       "否，查詢內容包含分隔字串，請直接篩選"), TitleStr:="篩選強化_" & FilterType)
                     End If
                     
                     Select Case Answer
@@ -165,6 +167,27 @@ NoErr:      .UsedRange.EntireColumn.AutoFit '避免因為數值過長而變成�
                 If InStr(TempTxt, "?") + InStr(TempTxt, "*") > 0 Then SpcStrCnt = SpcStrCnt + 1
             Next
         End If
+        
+        '統計特殊字元數量及判斷是否有超長字串
+        StrLen = 255 - IIf(FilterType = "模糊比對", 2, 0) '模糊比對者，前後要補兩個星號
+        For SnR = LBound(myAry) To UBound(myAry)
+            TempTxt = myAry(SnR)
+            
+            If Len(TempTxt) > StrLen Then
+                If HasLongStr = False Then
+                    Answer = ProQA("篩選條件字串超過指定長度（" & StrLen & "），" & Chr(10) & _
+                                   "是否改取最大長度？", _
+                                    Array("是，請將篩選條件字串改取LEFT" & StrLen & "字元", _
+                                          "否，請結束功能"), TitleStr:="篩選強化_" & FilterType)
+                    If Answer <> 1 Then GoTo OutNow
+                    HasLongStr = True
+                End If
+                TempTxt = Left(TempTxt, StrLen): myAry(SnR) = TempTxt
+            End If
+            
+            '完全比對者須另外統計包含特殊字元(?、*)的篩選條件項目數
+            If FilterType = "完全比對" And InStr(TempTxt, "?") + InStr(TempTxt, "*") > 0 Then SpcStrCnt = SpcStrCnt + 1
+        Next
         
         '如果是NoQA進來的，或是篩選條件在2項以下，或是完全比對模式下都沒有特殊字元...
         If NoQA = True Or AryCnt <= 2 Or (FilterType = "完全比對" And SpcStrCnt = 0) Then   '使用一般篩選
@@ -286,7 +309,7 @@ NoErr:      .UsedRange.EntireColumn.AutoFit '避免因為數值過長而變成�
 
 NoFinded: MsgBox "無符合資料。" & IIf(FilterType = "模糊比對", Chr(10) & Chr(10) & _
                  "小提醒：" & Chr(10) & _
-                 "如果欄位的資料為數字型態，是無法被模糊篩選找到的喔！", "")
+                 "如果欄位的資料為數字型態，是無法被[模糊篩選]找到的喔！", "")
 
 OutNow: On Error Resume Next: TempSht_1.Delete: TempSht_2.Delete: mySht.Activate: On Error GoTo 0
 
